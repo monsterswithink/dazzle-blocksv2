@@ -1,0 +1,10 @@
+{
+  "name": "Creative",
+  "fontFamily": "cursive",
+  "colors": {
+    "primary": "#D81B60",
+    "secondary": "#FF8A65",
+    "text": "#424242",
+    "background": "#FFFDE7"
+  }
+}

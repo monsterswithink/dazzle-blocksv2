@@ -1,0 +1,10 @@
+{
+  "name": "Classic",
+  "fontFamily": "serif",
+  "colors": {
+    "primary": "#4A148C",
+    "secondary": "#6A1B9A",
+    "text": "#333333",
+    "background": "#F5F5F5"
+  }
+}

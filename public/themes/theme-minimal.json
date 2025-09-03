@@ -1,0 +1,10 @@
+{
+  "name": "Minimal",
+  "fontFamily": "monospace",
+  "colors": {
+    "primary": "#212121",
+    "secondary": "#757575",
+    "text": "#212121",
+    "background": "#FFFFFF"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "Modern",
+  "fontFamily": "sans-serif",
+  "colors": {
+    "primary": "#1976D2",
+    "secondary": "#2196F3",
+    "text": "#212121",
+    "background": "#F8F8F8"
+  }
+}
