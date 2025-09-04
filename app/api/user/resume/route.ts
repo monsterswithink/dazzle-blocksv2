@@ -1,3 +1,6 @@
+// app/api/user/resume/route.ts
+// Keep the route but return resumeId (backwards-compatible shape expected by frontend)
+
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
@@ -8,7 +11,6 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Select the `data` JSONB column (per your DB schema) and return it as `resume`
   const { data, error } = await supabase
     .from("resumes")
     .select("id, user_id, data, created_at, updated_at")
@@ -17,22 +19,21 @@ export async function GET() {
     .single();
 
   if (error) {
-    if (error.code === "PGRST116") {
-      return NextResponse.json({ resume: null });
-    }
-    console.error("Error fetching resume ID:", error.message || error);
-    return NextResponse.json({ error: "Failed to fetch resume" }, { status: 500 });
+    // If no resume row found return explicit nulls so frontend knows "none"
+    console.error("Error fetching resume:", error.message || error);
+    return NextResponse.json({ resumeId: null, resume: null }, { status: 200 });
   }
 
   const resume = data
     ? {
         id: data.id,
         userId: data.user_id,
-        content: data.data, // return the JSON under `content` for backward compatibility
+        content: data.data, // JSONB content
         createdAt: data.created_at,
         updatedAt: data.updated_at,
       }
     : null;
 
-  return NextResponse.json({ resume });
+  // Return resumeId for compatibility with ProfileContent and other consumers
+  return NextResponse.json({ resumeId: resume?.id ?? null, resume });
 }

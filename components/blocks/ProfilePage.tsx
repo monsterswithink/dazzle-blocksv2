@@ -2,6 +2,11 @@
 
 import React, { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import type { Session } from "next-auth";
+import { AuthUser } from "@/types/authuser";
+
+// Extend the Session type to include accessToken if needed
+type ExtendedSession = Session & { accessToken?: string };
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
@@ -14,23 +19,40 @@ export default function ProfilePage() {
   const router = useRouter();
   const [profile, setProfile] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [resumeId, setResumeId] = useState<string | null>(null);
+  const [isFetchingResumeId, setIsFetchingResumeId] = useState(true);
 
   useEffect(() => {
     if (status === "unauthenticated") {
-      router.push("/");
+      router.push("/api/auth/signin");
     }
-  }, [status, router]);
+    if (session) {
+      const extendedSession = session as ExtendedSession;
+      if (extendedSession?.accessToken) {
+        fetch("/api/profile", {
+          headers: { Authorization: `Bearer ${extendedSession.accessToken}` },
+        })
+          .then((res) => res.json())
+          .then((data) => setProfile(data))
+          .catch(() => setError("Failed to load profile"));
 
-  useEffect(() => {
-    if (session?.accessToken) {
-      fetch("/api/profile", {
-        headers: { Authorization: `Bearer ${session.accessToken}` },
-      })
-        .then((res) => res.json())
-        .then((data) => setProfile(data))
-        .catch(() => setError("Failed to load profile"));
+        setIsFetchingResumeId(true);
+        fetch("/api/user/resume")
+          .then((res) =>
+            res.ok
+              ? res.json()
+              : Promise.reject("Failed to fetch resume ID")
+          )
+          .then((data) => {
+            if (data.resumeId) {
+              setResumeId(data.resumeId);
+            }
+          })
+          .catch(() => setError("Failed to fetch resume ID."))
+          .finally(() => setIsFetchingResumeId(false));
+      }
     }
-  }, [session]);
+  }, [session, status, router]);
 
   const handleEnrich = async () => {
     if (!profile?.vanityName) {
@@ -62,7 +84,7 @@ export default function ProfilePage() {
     return null;
   }
 
-  const user = session.user;
+  const user = session.user as AuthUser;
 
   return (
     <main className="flex min-h-[calc(100vh-theme(spacing.16))] flex-col items-center justify-center p-4 md:p-6 lg:p-8">
@@ -70,7 +92,7 @@ export default function ProfilePage() {
         <CardHeader className="flex flex-col items-center gap-4">
           <Avatar className="h-24 w-24">
             <AvatarImage
-              src={user?.image || "/placeholder-user.jpg"}
+              src={user?.avatarUrl || "/placeholder-user.jpg"}
               alt={user?.name || "User Avatar"}
             />
             <AvatarFallback>{user?.name?.charAt(0) || "U"}</AvatarFallback>
@@ -95,8 +117,14 @@ export default function ProfilePage() {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex flex-col gap-4">
-            <Button asChild size="lg">
-              <Link href="/resume/id">View Resume</Link>
+            <Button asChild size="lg" disabled={isFetchingResumeId || !resumeId}>
+              <Link href={resumeId ? `/resume/${resumeId}` : "#"}>
+                {isFetchingResumeId
+                  ? "Loading Resume..."
+                  : resumeId
+                  ? "View Resume"
+                  : "No Resume Found"}
+              </Link>
             </Button>
             {profile && (
               <Button onClick={handleEnrich} variant="outline" size="lg">

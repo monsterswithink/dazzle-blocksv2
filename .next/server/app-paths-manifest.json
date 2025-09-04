@@ -1,0 +1,6 @@
+{
+  "/api/auth/[...nextAuth]/route": "app/api/auth/[...nextAuth]/route.js",
+  "/auth/error": "app/auth/error.js",
+  "/page": "app/page.js",
+  "/_not-found/page": "app/_not-found/page.js"
+}

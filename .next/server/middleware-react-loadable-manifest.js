@@ -1,0 +1,1 @@
+self.__REACT_LOADABLE_MANIFEST="{\"app/page.tsx -> @/blocks/HomeContent\":{\"id\":\"app/page.tsx -> @/blocks/HomeContent\",\"files\":[\"static/chunks/_app-pages-browser_components_blocks_HomeContent_tsx.js\"]}}"

@@ -1,10 +1,7 @@
 // lib/auth.ts
-
-// lib/auth.ts
-
 import NextAuth from "next-auth";
 import LinkedIn from "next-auth/providers/linkedin";
-import { supabase } from "./supabase"; // Import the Supabase client
+import { supabase } from "./supabase";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: process.env.NEXTAUTH_SECRET,
@@ -12,67 +9,102 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     LinkedIn({
       clientId: process.env.LINKEDIN_CLIENT_ID!,
       clientSecret: process.env.LINKEDIN_CLIENT_SECRET!,
+      // LinkedIn is not an OIDC provider for discovery; use OAuth scopes
       authorization: {
-        params: { scope: "openid profile email" },
+        params: { scope: "r_liteprofile r_emailaddress" },
       },
-      userinfo: {
-        url: "https://api.linkedin.com/v2/userinfo",
-      },
+      // Fetch profile/email manually using the access token
       async profile(profile, tokens) {
-        const profileResponse = await fetch(
-          "https://api.linkedin.com/v2/me?projection=(vanityName)",
+        const accessToken = (tokens as any)?.access_token;
+        if (!accessToken) {
+          return {
+            id: profile?.sub ?? null,
+            name: profile?.name ?? null,
+            email: null,
+            image: null,
+            vanityUrl: null,
+          };
+        }
+
+        // Basic profile (vanityName, localized names, profile picture)
+        const profileRes = await fetch(
+          "https://api.linkedin.com/v2/me?projection=(id,localizedFirstName,localizedLastName,vanityName,profilePicture(displayImage~:playableStreams))",
           {
             headers: {
-              Authorization: `Bearer ${tokens.access_token}`,
+              Authorization: `Bearer ${accessToken}`,
             },
           }
         );
+        const profileData = await profileRes.json();
 
-        const emailResponse = await fetch(
+        // Email address
+        const emailRes = await fetch(
           "https://api.linkedin.com/v2/emailAddress?q=members&projection=(elements*(handle~))",
           {
             headers: {
-              Authorization: `Bearer ${tokens.access_token}`,
+              Authorization: `Bearer ${accessToken}`,
             },
           }
         );
+        const emailData = await emailRes.json();
+        const email = emailData?.elements?.[0]?.["handle~"]?.emailAddress ?? null;
 
-        const profileData = await profileResponse.json();
-        const emailData = await emailResponse.json();
-        const email = emailData.elements?.[0]?.["handle~"]?.emailAddress;
+        const name = `${profileData?.localizedFirstName ?? ""} ${profileData?.localizedLastName ?? ""}`.trim() || null;
+
+        // try to extract a profile image URL (highest-res identifier)
+        let image: string | null = null;
+        try {
+          const displayImage = profileData?.profilePicture?.["displayImage~"];
+          const elements = displayImage?.elements || [];
+          // find the last identifier (usually highest resolution)
+          const identifiers = elements.flatMap((el: any) => el.identifiers || []);
+          image = identifiers?.[0]?.identifier ?? null;
+        } catch (e) {
+          image = null;
+        }
 
         return {
-          id: profile.sub,
-          name: profile.name,
-          email: email || null,
-          image: profile.picture,
-          vanityUrl: profileData.vanityName,
+          id: profileData.id,
+          name,
+          email,
+          image,
+          vanityUrl: profileData.vanityName ?? null,
         };
       },
     }),
   ],
   callbacks: {
-    async jwt({ token, account }) {
+    async jwt({ token, account, profile }) {
       if (account) {
         token.accessToken = account.access_token;
       }
+      if (profile) {
+        // vendor-specific vanityName from profile() above
+        (token as any).vanityUrl = (profile as any).vanityUrl ?? null;
+      }
       return token;
     },
-    async session({ session, token, user }) {
-      session.accessToken = token.accessToken as string;
+    async session({ session, token }) {
+      // Attach token and vanityUrl to session so client can call API endpoints
+      (session as any).accessToken = (token as any).accessToken as string | undefined;
       if (session.user) {
-        session.user.vanityUrl = user.vanityUrl;
-        session.user.avatarUrl = user.image; // Correctly map image to avatarUrl
-
-        // Fetch profile from Supabase to get public_identifier
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("public_identifier")
-          .eq("id", user.id)
-          .single();
-
-        if (profile) {
-          session.user.public_identifier = profile.public_identifier;
+        (session.user as any).vanityUrl = (token as any).vanityUrl;
+        // Attempt (best-effort) to fetch the public_identifier from Supabase profiles table
+        try {
+          const userId = session.user?.id;
+          if (userId) {
+            const { data: profileRow, error } = await supabase
+              .from("profiles")
+              .select("public_identifier")
+              .eq("id", userId)
+              .single();
+            if (!error && profileRow) {
+              (session.user as any).public_identifier = profileRow.public_identifier;
+            }
+          }
+        } catch (e) {
+          // non-fatal: do not fail session due to Supabase lookup error
+          console.warn("Supabase profiles lookup failed in session callback:", e);
         }
       }
       return session;
@@ -86,25 +118,3 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     strategy: "jwt",
   },
 });
-
-declare module "next-auth" {
-  interface Session {
-    accessToken?: string;
-    user: {
-      id: string;
-      name?: string | null;
-      email?: string | null;
-      image?: string | null;
-      avatarUrl?: string | null; // Add avatarUrl
-      vanityUrl?: string;
-      public_identifier?: string; // Add public_identifier
-    };
-  }
-}
-
-declare module "next-auth/jwt" {
-  interface JWT {
-    accessToken?: string;
-    vanityUrl?: string;
-  }
-}
