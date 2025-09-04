@@ -7,48 +7,57 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/ui/avatar";
 import { Button } from "@/ui/button";
 import { Loader2 } from "lucide-react";
-import type { UserWithProfile } from "@/app/api/profile/route";
+import type { AuthUser } from "@/types/authuser";
+import type { UserProfile } from "@/types/profile";
 
 export default function ProfileContent() {
   const { data: session, status } = useSession();
-  const [profile, setProfile] = useState<UserWithProfile | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [resumeId, setResumeId] = useState<string | null>(null);
   const [isFetchingResumeId, setIsFetchingResumeId] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (status === "authenticated" && session?.accessToken) {
-      // Fetch full profile
-      fetch("/api/profile", {
-        headers: { Authorization: `Bearer ${session.accessToken}` },
-      })
-        .then((res) => res.ok ? res.json() : Promise.reject("Failed to load profile"))
-        .then((data) => setProfile(data))
-        .catch(() => setError("Failed to load profile data."));
+  // typed view of the NextAuth user object
+  const authUser = (session?.user as AuthUser | undefined) ?? undefined;
 
-      // Fetch resume ID
-      setIsFetchingResumeId(true);
-      fetch("/api/user/resume")
-        .then((res) => res.ok ? res.json() : Promise.reject("Failed to fetch resume ID"))
-        .then((data) => {
-          if (data.resumeId) {
-            setResumeId(data.resumeId);
-          } else {
-            console.log("No resume found for this user.");
-            // In a real app, you might want to show a "Create Resume" button here.
-          }
+  useEffect(() => {
+    // Only run when authenticated
+    if (status === "authenticated") {
+      const accessToken = (session as any)?.accessToken as string | undefined;
+      if (accessToken) {
+        // Fetch full profile
+        fetch("/api/profile", {
+          headers: { Authorization: `Bearer ${accessToken}` },
         })
-        .catch(() => setError("Failed to fetch resume ID."))
-        .finally(() => setIsFetchingResumeId(false));
+          .then((res) => (res.ok ? res.json() : Promise.reject("Failed to load profile")))
+          .then((data) => setProfile(data))
+          .catch(() => setError("Failed to load profile data."));
+
+        // Fetch resume ID
+        setIsFetchingResumeId(true);
+        fetch("/api/user/resume", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        })
+          .then((res) => (res.ok ? res.json() : Promise.reject("Failed to fetch resume ID")))
+          .then((data) => {
+            if (data?.resumeId) {
+              setResumeId(data.resumeId);
+            } else {
+              console.log("No resume found for this user.");
+            }
+          })
+          .catch(() => setError("Failed to fetch resume ID."))
+          .finally(() => setIsFetchingResumeId(false));
+      }
     }
   }, [session, status]);
 
   const handleEnrich = async () => {
-    if (!session?.user?.vanityUrl) {
+    if (!authUser?.vanityUrl) {
       alert("LinkedIn vanity URL not found in your session.");
       return;
     }
-    const vanityName = session.user.vanityUrl.split("/").pop();
+    const vanityName = authUser.vanityUrl.split("/").pop();
     const res = await fetch(`/api/enrich?vanityName=${vanityName}`);
     if (!res.ok) {
       alert("Failed to fetch enriched profile");
@@ -72,7 +81,7 @@ export default function ProfileContent() {
     return <p>Access Denied</p>;
   }
 
-  const user = session?.user;
+  const user = authUser;
   const canEditResume = !isFetchingResumeId && resumeId;
 
   return (
@@ -116,7 +125,7 @@ export default function ProfileContent() {
               variant="outline"
               size="lg"
               onClick={handleEnrich}
-              disabled={!session?.user?.vanityUrl}
+              disabled={!authUser?.vanityUrl}
             >
               Enrich Profile with LinkedIn Data
             </Button>
